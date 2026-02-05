@@ -1,6 +1,6 @@
 # --------------------------------------------------------------------------------
 # Copyright (c) 2026 Luiz Tiago da Silva - PROGEN S.A.
-# Descrição: Robô PRÉ-APR PRO - Versão WEB Cloud (Chromium Fix)
+# Descrição: Robô PRÉ-APR PRO - Versão WEB Cloud com Fix de Conexão e Agente
 # --------------------------------------------------------------------------------
 
 import streamlit as st
@@ -81,20 +81,20 @@ if btn_iniciar:
     if not reg or not senha or not uploaded_file:
         st.error("⚠️ Erro: Preencha Registro, Senha e suba a Planilha antes de iniciar.")
     else:
-        # Configurações do Navegador para rodar no Servidor Linux Cloud (Streamlit)
+        # Configurações do Navegador (Disfarçado para evitar bloqueios de rede)
         chrome_options = Options()
         chrome_options.add_argument("--headless")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
-        # Caminho correto para o Chromium no Linux Cloud atual
+        # Identificando-se como um navegador Windows real
+        chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
         chrome_options.binary_location = "/usr/bin/chromium" 
 
         try:
             update_log("Iniciando motor do navegador no servidor...")
-            # No Streamlit Cloud com 'chromium' instalado, o driver é reconhecido automaticamente
             driver = webdriver.Chrome(options=chrome_options)
-            wait = WebDriverWait(driver, 35)
+            wait = WebDriverWait(driver, 45) # Aumentei o tempo de espera para rede lenta
             actions = ActionChains(driver)
 
             # Lendo planilha
@@ -102,16 +102,21 @@ if btn_iniciar:
             novos_resultados = []
             hoje = datetime.now()
 
-            driver.get("https://intapr.enel.com/")
-            update_log("Acessando Portal Enel e realizando login...")
+            # URL DIRETA DE LOGIN
+            url_site = "https://intapr.enel.com/login"
+            update_log(f"Conectando ao Portal Enel ({url_site})...")
+            driver.get(url_site)
+            
+            time.sleep(8) # Espera para estabilizar a conexão
+            update_log("Realizando login no sistema...")
             
             # LOGIN
             wait.until(EC.presence_of_element_located((By.ID, "email"))).send_keys(reg)
             driver.find_element(By.ID, "password").send_keys(senha)
             driver.execute_script("arguments[0].click();", driver.find_element(By.XPATH, "//button[@type='submit']"))
             
-            time.sleep(15) # Tempo de segurança para carregamento do portal
-            update_log(f"Configurando filtros para localidade: {loc}")
+            time.sleep(15) 
+            update_log(f"Filtros: {loc}")
 
             # SELEÇÃO DE LOCALIDADE
             def selecionar_web(id_campo, texto):
@@ -131,7 +136,6 @@ if btn_iniciar:
             col_nome = next((c for c in df_input.columns if "PROJETOS.PY" in str(c).upper()), None)
             
             if col_nome:
-                # Remove nulos e duplicatas para não repetir consulta
                 projetos = df_input[col_nome].dropna().unique()
                 for projeto in projetos:
                     proj_id = str(projeto).strip().replace(".0", "").replace(".", "").zfill(10)
@@ -153,39 +157,35 @@ if btn_iniciar:
                             if val_obj and val_obj > hoje:
                                 update_log(f"   ID {id_limpo}: ATIVO (EXPIRA: {val_obj.strftime('%d/%m/%Y')})")
                                 novos_resultados.append({
-                                    "Ordem": get_js("orderNumber"), 
-                                    "ID_tabela": id_limpo,
-                                    "Empresa": get_js("companyName"), 
-                                    "Data_Criacao": get_js("createdAt"),
-                                    "Status": get_js("statusName"), 
-                                    "Validade_APR": val_obj.strftime("%d/%m/%Y"),
+                                    "Ordem": get_js("orderNumber"), "ID_tabela": id_limpo,
+                                    "Empresa": get_js("companyName"), "Data_Criacao": get_js("createdAt"),
+                                    "Status": get_js("statusName"), "Validade_APR": val_obj.strftime("%d/%m/%Y"),
                                     "Retirado_em": datetime.now().strftime("%d/%m/%Y %H:%M")
                                 })
                     except: continue
 
             # FINALIZAÇÃO
             if novos_resultados:
-                update_log(f"Processo concluído! {len(novos_resultados)} ativos encontrados.")
+                update_log(f"Fim: {len(novos_resultados)} ativos.")
                 df_final = pd.DataFrame(novos_resultados)
                 
-                # Gerar Excel em memória (BytesIO) para o download via Web
                 towrite = BytesIO()
                 df_final.to_excel(towrite, index=False, engine='openpyxl')
                 towrite.seek(0)
                 
                 st.balloons()
                 st.download_button(
-                    label="✅ BAIXAR PLANILHA DE RESULTADOS",
+                    label="✅ BAIXAR PLANILHA",
                     data=towrite,
-                    file_name=f"Resultado_APR_{loc}_{datetime.now().strftime('%d%m%Y')}.xlsx",
+                    file_name=f"APR_{loc}_{datetime.now().strftime('%d%m%Y')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
             else:
-                update_log("Nenhum registro ativo encontrado para os IDs informados.")
+                update_log("Nenhum ativo encontrado.")
 
         except Exception as e:
-            st.error(f"Erro Crítico na Automação: {e}")
-            update_log(f"ERRO: {str(e)}")
+            st.error(f"Erro Crítico: {e}")
+            update_log(f"ERRO DE CONEXÃO: Verifique se o portal está acessível.")
         finally:
             if 'driver' in locals():
                 driver.quit()
