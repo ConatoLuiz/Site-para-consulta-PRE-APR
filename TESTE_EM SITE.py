@@ -1,3 +1,8 @@
+# --------------------------------------------------------------------------------
+# Copyright (c) 2026 Luiz Tiago da Silva - PROGEN S.A.
+# Descrição: Robô PRÉ-APR PRO - Versão WEB Cloud (Chromium Fix)
+# --------------------------------------------------------------------------------
+
 import streamlit as st
 import pandas as pd
 import time
@@ -11,13 +16,12 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
-import sys
 from io import BytesIO
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Progen S.A. - Portal APR", layout="wide")
 
-# Estilo para o Log Rosa Profissional
+# Estilo para o Log Rosa Profissional e Botões
 st.markdown("""
     <style>
     .log-container {
@@ -33,7 +37,7 @@ st.markdown("""
         font-weight: bold;
         font-size: 13px;
     }
-    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #007bff; color: white; }
+    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #007bff; color: white; font-weight: bold; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -50,10 +54,9 @@ with st.sidebar:
     st.title("⚙️ Configuração")
     
     reg = st.text_input("Registro (Usuário)")
-    senha = st.text_input("Senha") # Visível conforme seu pedido
+    senha = st.text_input("Senha") 
     loc = st.selectbox("Localidade", ["Campos", "Lagos", "Macaé", "Magé", "Niterói", "São Gonçalo", "Serrana", "Sul", "Noroeste"], index=4)
     
-    # Botão Iniciar Processamento posicionado abaixo da Localidade
     st.divider()
     btn_iniciar = st.button("🚀 INICIAR PROCESSAMENTO")
     
@@ -78,18 +81,19 @@ if btn_iniciar:
     if not reg or not senha or not uploaded_file:
         st.error("⚠️ Erro: Preencha Registro, Senha e suba a Planilha antes de iniciar.")
     else:
-        # Configurações do Navegador para rodar no Servidor Linux
+        # Configurações do Navegador para rodar no Servidor Linux Cloud (Streamlit)
         chrome_options = Options()
         chrome_options.add_argument("--headless")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.binary_location = "/usr/bin/chromium-browser" # Caminho do Linux Cloud
+        chrome_options.add_argument("--disable-gpu")
+        # Caminho correto para o Chromium no Linux Cloud atual
+        chrome_options.binary_location = "/usr/bin/chromium" 
 
         try:
             update_log("Iniciando motor do navegador no servidor...")
-            # Caminho do Driver no Linux Cloud (Packages.txt)
-            service = Service("/usr/bin/chromedriver")
-            driver = webdriver.Chrome(service=service, options=chrome_options)
+            # No Streamlit Cloud com 'chromium' instalado, o driver é reconhecido automaticamente
+            driver = webdriver.Chrome(options=chrome_options)
             wait = WebDriverWait(driver, 35)
             actions = ActionChains(driver)
 
@@ -106,7 +110,7 @@ if btn_iniciar:
             driver.find_element(By.ID, "password").send_keys(senha)
             driver.execute_script("arguments[0].click();", driver.find_element(By.XPATH, "//button[@type='submit']"))
             
-            time.sleep(12)
+            time.sleep(15) # Tempo de segurança para carregamento do portal
             update_log(f"Configurando filtros para localidade: {loc}")
 
             # SELEÇÃO DE LOCALIDADE
@@ -127,6 +131,7 @@ if btn_iniciar:
             col_nome = next((c for c in df_input.columns if "PROJETOS.PY" in str(c).upper()), None)
             
             if col_nome:
+                # Remove nulos e duplicatas para não repetir consulta
                 projetos = df_input[col_nome].dropna().unique()
                 for projeto in projetos:
                     proj_id = str(projeto).strip().replace(".0", "").replace(".", "").zfill(10)
@@ -148,9 +153,12 @@ if btn_iniciar:
                             if val_obj and val_obj > hoje:
                                 update_log(f"   ID {id_limpo}: ATIVO (EXPIRA: {val_obj.strftime('%d/%m/%Y')})")
                                 novos_resultados.append({
-                                    "Ordem": get_js("orderNumber"), "ID_tabela": id_limpo,
-                                    "Empresa": get_js("companyName"), "Data_Criacao": get_js("createdAt"),
-                                    "Status": get_js("statusName"), "Validade_APR": val_obj.strftime("%d/%m/%Y"),
+                                    "Ordem": get_js("orderNumber"), 
+                                    "ID_tabela": id_limpo,
+                                    "Empresa": get_js("companyName"), 
+                                    "Data_Criacao": get_js("createdAt"),
+                                    "Status": get_js("statusName"), 
+                                    "Validade_APR": val_obj.strftime("%d/%m/%Y"),
                                     "Retirado_em": datetime.now().strftime("%d/%m/%Y %H:%M")
                                 })
                     except: continue
@@ -160,7 +168,7 @@ if btn_iniciar:
                 update_log(f"Processo concluído! {len(novos_resultados)} ativos encontrados.")
                 df_final = pd.DataFrame(novos_resultados)
                 
-                # Gerar Excel para download
+                # Gerar Excel em memória (BytesIO) para o download via Web
                 towrite = BytesIO()
                 df_final.to_excel(towrite, index=False, engine='openpyxl')
                 towrite.seek(0)
@@ -176,7 +184,8 @@ if btn_iniciar:
                 update_log("Nenhum registro ativo encontrado para os IDs informados.")
 
         except Exception as e:
-            st.error(f"Erro Crítico: {e}")
+            st.error(f"Erro Crítico na Automação: {e}")
+            update_log(f"ERRO: {str(e)}")
         finally:
             if 'driver' in locals():
                 driver.quit()
